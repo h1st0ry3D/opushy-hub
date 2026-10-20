@@ -9,6 +9,11 @@ COPY src ./src
 COPY web ./web
 COPY core ./core
 
+# The client is bundled here, not during a request. Bun's HTML import route
+# returns an empty body in a production container, and this removes the
+# question entirely.
+RUN bun build web/index.html --outdir dist --minify
+
 ENV NODE_ENV=production \
     PORT=8080 \
     OPSHUB_DB=/data/hub.sqlite
