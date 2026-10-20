@@ -20,11 +20,17 @@ export function App() {
   const [page, setPage] = useState(0)
   const [celebrating, setCelebrating] = useState<CelebrationModel | null>(null)
 
+  // Every load lands on the newest page, which is what the bar does after it
+  // reads the file. Paging back is still possible, the next load returns here.
+  function applyState(next: State) {
+    setState(next)
+    setPage(Math.max(0, pageCount(next) - 1))
+  }
+
   async function refresh() {
     try {
       const next = await api.state()
-      setState(next)
-      setPage((current) => Math.min(current, Math.max(0, pageCount(next) - 1)))
+      applyState(next)
       setError("")
     } catch (cause) {
       if (cause instanceof HttpError && cause.status === 401) setNeedToken(true)
@@ -38,12 +44,12 @@ export function App() {
 
   async function complete(reps: number, previousRecord: number) {
     const result = await api.commit(new Date().toISOString(), reps)
-    setState(result)
+    applyState(result)
     setCelebrating(celebrationFrom(result, reps, previousRecord))
   }
 
   async function saveMax(value: number) {
-    setState(await api.setMax(value))
+    applyState(await api.setMax(value))
   }
 
   if (needToken) {
@@ -121,7 +127,10 @@ export function App() {
           type="button"
           role="tab"
           aria-selected={tab === "history"}
-          onClick={() => setTab("history")}
+          onClick={() => {
+            setTab("history")
+            setPage(Math.max(0, pageTotal - 1))
+          }}
         >
           Activity
         </button>
