@@ -12,9 +12,10 @@ a sleeping NAS cannot freeze the desktop bar.
 
 Both screens at a 390 px viewport, in the theme's own palette.
 
-| Session | Activity |
-| --- | --- |
-| ![session screen](docs/preview-session.png) | ![activity screen](docs/preview-activity.png) |
+<p>
+  <img src="docs/preview-session.png" width="320" alt="session screen">
+  <img src="docs/preview-activity.png" width="320" alt="activity screen">
+</p>
 
 ## Why a hub
 
