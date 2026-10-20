@@ -80,30 +80,68 @@ keeps it in `localStorage`, so this happens once per device.
 
 ## Update
 
-Pick the new commit, unpack it over the old source and rebuild. The data
-directory is outside `src`, so the token and every recorded session survive.
+`deploy/nas-update.sh` does the whole update. Copy it to the project folder once,
+then run it for each new version.
+
+```sh
+cp /path/to/repo/deploy/nas-update.sh /volume1/docker/opushy-hub/update.sh
+chmod +x /volume1/docker/opushy-hub/update.sh
+```
 
 ```sh
 cd /volume1/docker/opushy-hub
-SHA=<new-sha>
-rm -rf src && mkdir -p src
-curl -fsSL -o /tmp/hub.tar.gz "https://github.com/h1st0ry3D/opushy-hub/archive/${SHA}.tar.gz"
-sudo tar -xzf /tmp/hub.tar.gz -C src --strip-components=1
-sudo docker compose up -d --build
-sudo docker compose ps
+./update.sh              # the newest commit on main
+./update.sh <sha>        # one specific commit
+./update.sh --dry-run    # download and unpack, stop before the swap
 ```
 
-Raise the image tag in the compose file at the same time, for example to
-`opushy-hub:0.1.1`. The tag is what tells you later which commit is running.
+A run looks like this:
 
-Check the result:
+```
+commit  resolving the newest on main
+commit  3e8dd52c44ffa30f70c6e65fee0f794ca95218bb (newest on main)
+fetch   h1st0ry3D/opushy-hub at 3e8dd52c44ff
+unpack  src.new looks complete
+build   docker compose up -d --build
+wait    health...
+check   health=healthy page=200 688
+
+deployed 3e8dd52c44ff, recorded in deployed-sha
+```
+
+What it does, in order: resolve the commit, download the tarball, unpack it into
+`src.new` with one level stripped, check that the tree carries the files the image
+copies, move `src` aside to `src.old`, move `src.new` into place, rebuild, wait for
+the healthcheck, and confirm that `/` returns a real page rather than an empty
+body.
+
+The last line of the check is the one that matters. `page=200 688` is a served
+page. `page=200 0` is the blank screen that a missing client build produces, and
+the script exits non-zero for it.
+
+`deployed-sha` records what is installed. Running the same commit twice does
+nothing, and deleting that file forces a rebuild of the same commit.
+
+If the check fails, `src.old` is still there:
 
 ```sh
-curl -s http://127.0.0.1:8080/api/health
+rm -rf src && mv src.old src
+sudo docker compose up -d --build
 ```
 
-It answers with the session count and needs no token, so it is the quickest way
-to confirm the container is serving after an update.
+### By hand
+
+The same steps, if you would rather not use the script:
+
+```sh
+SHA=<commit>
+curl -fsSL -o /tmp/opushy-hub.tar.gz "https://github.com/h1st0ry3D/opushy-hub/archive/${SHA}.tar.gz"
+rm -rf src.new && mkdir -p src.new
+tar -xzf /tmp/opushy-hub.tar.gz -C src.new --strip-components=1
+grep -c 'COPY tsconfig.json' src.new/Dockerfile     # must be 1
+rm -rf src.old && mv src src.old && mv src.new src
+sudo docker compose up -d --build
+```
 
 ## Roll back
 
