@@ -77,12 +77,9 @@ mise run check        # tsc --noEmit && biome check
 mise run fix          # biome check --write
 ```
 
-On the NAS:
-
-```sh
-docker compose up -d --build
-docker compose exec hub cat /data/token
-```
+On the NAS, follow [docs/nas.md](docs/nas.md). DSM ships no git, so that page
+builds from an unpacked tarball instead of a git context, and it covers the
+update and rollback steps.
 
 ## Theme
 
@@ -105,6 +102,9 @@ There is no build command. `src/server.ts` imports `web/index.html` with
 `{ type: "html" }`, and Bun bundles the `.tsx` files behind it when a page is
 requested. `bun --watch` restarts the server, and no `dist/` directory exists to
 go stale.
+
+`compose.yaml` in the repo root builds straight from a checkout. The NAS uses its
+own file, because the path there is a downloaded tarball. See [docs/nas.md](docs/nas.md).
 
 ## What this is not
 
