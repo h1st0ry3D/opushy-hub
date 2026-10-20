@@ -149,6 +149,42 @@ Deploy the previous SHA with the same steps. The database is independent of the
 code, and the schema has not changed between releases so far. If a future release
 does change it, the release notes will say so.
 
+## Desktop sync
+
+The bar reads a local file and the phone writes to the hub, so something has to
+move sessions between them. That is `deploy/pc-sync.sh`, run from the PC.
+
+```sh
+just sync         # both directions
+just upload       # desktop to the hub
+just download     # hub to the desktop
+just status       # what each side holds, writes nothing
+```
+
+The recipes live in `~/.justfile` and call the script. The script reads the hub
+address and token from `~/.config/opushy/sync.env`:
+
+```sh
+OPSHUB_URL=http://192.168.0.9:8080
+OPSHUB_TOKEN=<contents of /volume1/docker/opushy-hub/data/token>
+```
+
+Both directions are safe to repeat. Upload sends every local session and the hub
+keeps the ones it was missing. Download sends the hub's whole history into
+`opushy-state.py state merge`, which takes the file lock and only writes when
+something was new, so a run that lost a race with the panel is fixed by the next
+one.
+
+`systemctl --user enable opushy-sync.service` already happened, and the unit in
+`~/.config/systemd/user/` runs `just sync` once at login. A user unit starts with
+the desktop session, so `loginctl enable-linger $USER` is only needed if you want
+it to run before you log in.
+
+Two limits worth knowing. Sessions sync; the record does not travel on its own,
+it rises when a session beats it, which both sides work out independently. And
+the bar is stale until the next sync, so a session recorded on the phone appears
+after the next login or a `just sync`.
+
 ## When it fails
 
 | Symptom | Cause and fix |
