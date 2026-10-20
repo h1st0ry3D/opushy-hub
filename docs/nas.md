@@ -121,6 +121,74 @@ does change it, the release notes will say so.
 | `address already in use` | another package holds 8080. Change the published port to `"8090:8080"` and use that port in the browser |
 | `ps` shows `unhealthy` | read `sudo docker compose logs --tail 50`. A failed healthcheck usually means the port mapping or the `/data` permission |
 | `curl` returns nothing on 8080 | the container is up but not listening. Check `sudo docker compose ps` for `Up` and the log for a startup error |
+| `could not find an available, non-overlapping IPv4 address pool` | the default bridge ranges are used up. See the section below the table |
+
+### The default network pool is full
+
+Docker gives each compose project a bridge network carved out of
+`172.17.0.0/16` through `172.31.0.0/16`. A NAS that has run a few projects
+exhausts those ranges, and compose stops before the container starts, after the
+image has already been built:
+
+```
+failed to create network opushy-hub_default: could not find an available,
+non-overlapping IPv4 address pool among the defaults to assign to the network
+```
+
+Nothing needs rebuilding. Print the subnets that are taken:
+
+```sh
+sudo docker network inspect $(sudo docker network ls -q) \
+  --format '{{.Name}}: {{range .IPAM.Config}}{{.Subnet}} {{end}}'
+```
+
+Then remove the networks with no container attached:
+
+```sh
+sudo docker network ls --format '{{.Name}}'
+sudo docker network prune
+sudo docker compose up -d
+```
+
+`prune` also deletes networks you created by hand that nothing is using, so read
+the list first.
+
+If the pool stays full, give this project a range of its own. Choose one that
+does not overlap the LAN, then add it to the compose file:
+
+```yaml
+services:
+  hub:
+    build:
+      context: ./src
+    image: opushy-hub:0.1.0
+    container_name: opushy-hub
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./data:/data
+    networks:
+      - hubnet
+
+networks:
+  hubnet:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.88.0.0/24
+```
+
+The last option is host networking, which asks for no pool at all. The app already
+listens on `0.0.0.0:8080`, so remove the `ports` block, since publishing is
+ignored in host mode, and set:
+
+```yaml
+    network_mode: host
+```
+
+The port then has to be free on the NAS itself. `sudo ss -ltn | grep :8080` says
+whether it is.
 
 ## Verifying after an update
 
