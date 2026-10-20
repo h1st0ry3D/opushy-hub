@@ -1,0 +1,264 @@
+/* Colours come from two places.
+ *
+ * The neutrals and the accent are the matte-black theme's own values, read out
+ * of /usr/share/omarchy/themes/matte-black/colors.toml. The bar and this page
+ * then share one palette instead of two approximations of each other.
+ *
+ * The three status hexes are the exception. They come from the plugin's
+ * ui/Status.js, which uses Material 700 green/amber/red because those stay
+ * distinguishable under the common forms of colour blindness. The history discs
+ * in the bar and the discs here have to be the same colour, so these three win
+ * over the theme.
+ */
+:root {
+  --on-track: #2e7d32;
+  --keep: #f57f17;
+  --drop: #c62828;
+  --empty: transparent;
+
+  --bg: #121212; /* background */
+  --surface: #1e1e1e; /* lighter_background */
+  --surface-2: #2a2a2a; /* selection */
+  --fg: #bebebe; /* foreground */
+  --muted: #8a8a8d; /* light_foreground, for text below the main colour */
+  --line: #2a2a2a; /* selection, used for borders and empty discs */
+  --accent: #e68e0d; /* accent */
+  --radius: 12px;
+
+  /* Style.space() in the panel, as one ramp. */
+  --s1: 4px;
+  --s2: 6px;
+  --s3: 8px;
+  --s4: 12px;
+  --s5: 14px;
+  --s6: 20px;
+
+  --font: "JetBrainsMono Nerd Font", "JetBrains Mono", ui-monospace, monospace;
+
+  /* form controls and scrollbars follow, so a dark page has no white boxes */
+  color-scheme: dark;
+}
+
+/* Dark is the theme and not a preference. This page sits next to a dark bar, so
+ * following the desktop's light mode would make the two disagree. The light
+ * palette stays available for anyone who sets data-theme="light" on <html>.
+ * Nothing turns it on by itself. */
+html[data-theme="light"] {
+  --bg: #f6f4ef;
+  --surface: #fffdf8;
+  --surface-2: #eee9e0;
+  --fg: #1d1b17;
+  --muted: rgb(29 27 23 / 62%);
+  --accent: #6b3fa0;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+body {
+  min-height: 100dvh;
+  font-family: var(--font);
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+#app {
+  padding: calc(env(safe-area-inset-top) + var(--s5)) calc(env(safe-area-inset-right) + var(--s5))
+    calc(env(safe-area-inset-bottom) + var(--s5)) calc(env(safe-area-inset-left) + var(--s5));
+  max-width: 520px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+button {
+  font: inherit;
+  font-size: 15px;
+  color: var(--fg);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-height: 44px;
+  padding: 0 var(--s4);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  font-weight: 700;
+}
+
+button.ghost {
+  background: transparent;
+}
+
+input {
+  font: inherit;
+  font-size: 16px; /* anything smaller and iOS zooms the page on focus */
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-height: 44px;
+  padding: 0 var(--s4);
+  width: 100%;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s4);
+}
+
+.row {
+  display: flex;
+  gap: var(--s3);
+  align-items: center;
+}
+
+/* Buttons in a row share the width evenly, the way the panel computes its
+ * button widths from the count. A disc or a progress dot is its own size and
+ * must not stretch to fill the row. */
+.row > *:not(.disc) {
+  flex: 1;
+}
+
+.dots {
+  display: flex;
+  justify-content: center;
+  gap: var(--s2);
+}
+
+.dots > span {
+  flex: 0 0 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.center {
+  text-align: center;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.faint {
+  color: var(--muted);
+}
+
+.mono-num {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.disc {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: #fff;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.segmented {
+  display: flex;
+  gap: var(--s2);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s2);
+}
+
+.segmented button {
+  flex: 1;
+  min-height: 36px;
+  font-size: 13px;
+  border: 0;
+  background: transparent;
+}
+
+.segmented button[aria-selected="true"] {
+  background: var(--surface-2);
+  color: var(--fg);
+}
+
+.toast {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s3) var(--s4);
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgb(9 9 9 / 78%);
+  backdrop-filter: blur(6px);
+  padding: max(var(--s6), env(safe-area-inset-top)) var(--s6);
+  z-index: 10;
+}
+
+.confetti {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 9;
+}
+
+.confetti i {
+  position: absolute;
+  top: -12px;
+  font-style: normal;
+  animation: fall linear infinite;
+}
+
+@keyframes fall {
+  from {
+    transform: translate3d(0, -10vh, 0) rotate(0deg);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  to {
+    transform: translate3d(var(--drift, 0), 55vh, 0) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confetti {
+    display: none;
+  }
+}

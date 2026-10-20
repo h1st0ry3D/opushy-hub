@@ -1,0 +1,13 @@
+services:
+  hub:
+    build: .
+    image: opushy-hub:0.1.0
+    container_name: opushy-hub
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - opushy-data:/data
+
+volumes:
+  opushy-data:

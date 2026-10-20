@@ -1,0 +1,23 @@
+{
+  "name": "opushy-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "test": "bun test",
+    "check": "tsc --noEmit && biome check .",
+    "fix": "biome check --write ."
+  },
+  "dependencies": {
+    "hono": "^4.13.13",
+    "preact": "^11.0.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@types/bun": "^1.4.3",
+    "typescript": "^7.0.2"
+  }
+}
