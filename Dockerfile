@@ -8,6 +8,7 @@ RUN bun install --frozen-lockfile --production
 COPY src ./src
 COPY web ./web
 COPY core ./core
+COPY tsconfig.json ./
 
 # The client is bundled here, not during a request. Bun's HTML import route
 # returns an empty body in a production container, and this removes the
