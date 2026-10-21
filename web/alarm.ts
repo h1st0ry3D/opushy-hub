@@ -1,15 +1,18 @@
-// The end-of-rest cue, scheduled on the audio clock rather than fired by a
+// The end-of-rest cue is scheduled on the audio clock instead of fired by a
 // timer.
 //
-// A JavaScript timer is throttled to about one tick a minute in a background
-// tab, and suspended outright when iOS backgrounds the app, so a setTimeout for
-// forty-five seconds is not a reliable way to make a sound. Web Audio keeps its
-// own clock: a tone scheduled for a future time plays then, even if the page has
-// not run any script since. Where the operating system suspends the audio
-// context too, nothing can play until the page resumes, and the countdown still
-// reports the right value because it is derived from a timestamp.
+// A JavaScript timer drops to about one tick a minute in a background tab, and
+// stops entirely when iOS backgrounds the app, so a setTimeout for forty-five
+// seconds is not a reliable way to make a sound. Web Audio keeps its own clock,
+// so a tone scheduled for a future time plays then, even if the page has not run
+// any script since. Where the operating system suspends the audio context too,
+// nothing can play until the page resumes, and the countdown still reports the
+// right value because it is derived from a timestamp.
 let context: AudioContext | null = null
 let tones: OscillatorNode[] = []
+// The audio-clock time the cue was scheduled for, so the rest can tell whether
+// the cue played or the clock never got there.
+let scheduledAt = 0
 
 function audio(): AudioContext | null {
   if (typeof AudioContext === "undefined") return null
@@ -58,6 +61,7 @@ export function playAlarm(): void {
   if (ctx.state === "suspended") void ctx.resume()
   cancelAlarm()
   const start = ctx.currentTime + 0.02
+  scheduledAt = start
   tones = [beep(ctx, start), beep(ctx, start + 0.33)]
 }
 
@@ -69,7 +73,26 @@ export function scheduleAlarm(seconds: number): void {
   if (ctx.state === "suspended") void ctx.resume()
   cancelAlarm()
   const start = ctx.currentTime + Math.max(0, seconds)
+  scheduledAt = start
   tones = [beep(ctx, start), beep(ctx, start + 0.33)]
+}
+
+// Called when a rest ends. The tone is left alone if the audio clock reached it.
+// Stopping it there is what silenced it before. The cue starts on the deadline
+// and the check runs up to a quarter of a second later, so cancelling at that
+// point stopped the cue before it played, or part way through it.
+//
+// If the clock never arrived, the tone did not play, because either the context
+// was suspended or the page was not running. Playing now covers both. The return
+// value says whether audio is available, which the panel uses to explain a
+// silent cue.
+export function settleAlarm(): boolean {
+  const ctx = audio()
+  if (!ctx) return false
+  if (ctx.state === "running" && ctx.currentTime >= scheduledAt - 0.05) return true
+  cancelAlarm()
+  playAlarm()
+  return ctx.state === "running"
 }
 
 // A notification would be the reliable way to reach someone outside the page.

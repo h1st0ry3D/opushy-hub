@@ -4,8 +4,8 @@ import {
   askNotifyPermission,
   cancelAlarm,
   notify,
-  playAlarm,
   scheduleAlarm,
+  settleAlarm,
   unlockAudio,
 } from "../alarm"
 
@@ -30,6 +30,9 @@ export function SessionFlow(props: {
   // rather than decremented, so a backgrounded tab that misses every tick still
   // reports the right number when it comes back.
   const [endsAt, setEndsAt] = useState<number | null>(null)
+  // Set when the browser refused to play the cue, so the panel can say why
+  // nothing was heard.
+  const [cueBlocked, setCueBlocked] = useState(false)
 
   function deadlineFrom(seconds: number): number {
     return Date.now() + seconds * 1000
@@ -39,7 +42,7 @@ export function SessionFlow(props: {
     return Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
   }
 
-  // A rest is settled exactly once, however many things notice that it is over.
+  // A rest settles once, however many things notice that it is over.
   const settled = useRef(true)
 
   // Everything about a running rest lives here, and the round moves on from
@@ -47,8 +50,8 @@ export function SessionFlow(props: {
   //
   // An effect runs after a paint, and a backgrounded page does not paint, so an
   // effect is the one place this cannot be decided. A timer callback plus the
-  // visibility change covers both cases: the page is running and the timer
-  // fires, or the page was away and the listener resolves it the moment it
+  // visibility change covers both cases. Either the page is running and the
+  // timer fires, or the page was away and the listener resolves it when it
   // returns.
   useEffect(() => {
     if (!counting || paused || endsAt === null) return
@@ -57,16 +60,13 @@ export function SessionFlow(props: {
     const settle = () => {
       if (settled.current) return
       settled.current = true
-      // More than a second past the deadline means the page was not running
-      // when it passed, so the tone scheduled on the audio clock never played.
-      const missed = Date.now() - deadline > 1500
-      cancelAlarm()
+      const heard = settleAlarm()
       setCounting(false)
       setPaused(false)
       setEndsAt(null)
       setRemaining(0)
       setRound((value) => value + 1)
-      if (missed) playAlarm()
+      setCueBlocked(!heard)
       notify("Rest over", "Next round when you are ready")
     }
 
@@ -111,6 +111,7 @@ export function SessionFlow(props: {
 
   function beginRest() {
     settled.current = false
+    setCueBlocked(false)
     const deadline = deadlineFrom(state.restSeconds)
     setEndsAt(deadline)
     setRemaining(secondsLeft(deadline))
@@ -256,6 +257,13 @@ export function SessionFlow(props: {
           </button>
         )}
       </div>
+
+      {cueBlocked && (
+        <div class="center" style={{ fontSize: "11px", lineHeight: 1.5, color: "var(--keep)" }}>
+          The rest ended, but this browser would not play the cue. Allow audio for this site in its
+          settings.
+        </div>
+      )}
 
       <div class="center faint" style={{ fontSize: "11px", lineHeight: 1.5 }}>
         Next: within 2 days +1 • day 3 keep • day 4+ −1
