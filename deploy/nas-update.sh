@@ -11,9 +11,37 @@ set -euo pipefail
 
 REPO="h1st0ry3D/opushy-hub"
 BRANCH="main"
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SHA_FILE="$ROOT/deployed-sha"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER="${DOCKER:-sudo docker}"
+
+# The project root is the nearest folder at or above the working directory, or
+# above the script itself, that holds both docker-compose.yaml and data/. It is
+# searched rather than assumed so this runs the same way as ./update.sh at the
+# root, as src/deploy/nas-update.sh straight out of the tarball, or from any
+# folder inside the project.
+find_root() {
+  local dir
+  for dir in "$@"; do
+    [ -n "$dir" ] || continue
+    while :; do
+      if [ -f "$dir/docker-compose.yaml" ] && [ -d "$dir/data" ]; then
+        printf '%s' "$dir"
+        return 0
+      fi
+      [ "$dir" = "/" ] && break
+      dir="$(dirname "$dir")"
+    done
+  done
+  return 1
+}
+
+if ! ROOT="$(find_root "$PWD" "$SCRIPT_DIR")"; then
+  echo "no docker-compose.yaml with a data/ folder at or above:" >&2
+  echo "  $PWD" >&2
+  echo "  $SCRIPT_DIR" >&2
+  exit 1
+fi
+SHA_FILE="$ROOT/deployed-sha"
 
 dry_run=0
 target=""
@@ -26,10 +54,6 @@ for arg in "$@"; do
 done
 
 cd "$ROOT"
-if [ ! -d data ] || [ ! -f docker-compose.yaml ]; then
-  echo "run this from the project folder, next to docker-compose.yaml and data/" >&2
-  exit 1
-fi
 
 # Read the first line of a stream without `| head`, which closes the pipe early
 # and, with pipefail, takes the script down on the producer's SIGPIPE.
@@ -52,7 +76,9 @@ newest_commit() {
         return 0
         ;;
     esac
-  done < <(curl -fsSL "https://github.com/${REPO}/commits/${BRANCH}.atom")
+    # stderr silenced: this loop stops reading as soon as it has the id, and the
+    # resulting SIGPIPE is not a failure worth reporting
+  done < <(curl -fsSL "https://github.com/${REPO}/commits/${BRANCH}.atom" 2>/dev/null)
   return 1
 }
 

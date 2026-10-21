@@ -80,20 +80,19 @@ keeps it in `localStorage`, so this happens once per device.
 
 ## Update
 
-`deploy/nas-update.sh` does the whole update. Copy it to the project folder once,
-then run it for each new version.
-
-```sh
-cp /path/to/repo/deploy/nas-update.sh /volume1/docker/opushy-hub/update.sh
-chmod +x /volume1/docker/opushy-hub/update.sh
-```
+`deploy/nas-update.sh` does the whole update. The copy from the last download is
+already at `src/deploy/nas-update.sh`, so there is nothing to install first.
 
 ```sh
 cd /volume1/docker/opushy-hub
-./update.sh              # the newest commit on main
-./update.sh <sha>        # one specific commit
-./update.sh --dry-run    # download and unpack, stop before the swap
+./src/deploy/nas-update.sh              # the newest commit on main
+./src/deploy/nas-update.sh <sha>        # one specific commit
+./src/deploy/nas-update.sh --dry-run    # download and unpack, stop before the swap
 ```
+
+It finds the project by looking for `docker-compose.yaml` and `data/` at or above
+the working directory, then above the script itself, so it also works from any
+folder inside the project once copied to the root as `update.sh`.
 
 A run looks like this:
 
