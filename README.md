@@ -5,8 +5,8 @@ SQLite database on the NAS, answers a small HTTP API, and serves a phone-sized
 web app that runs the same three-round session as the Omarchy bar widget.
 
 The plugin does not change. It keeps a local file, runs a local helper, and opens
-no sockets. A bridge on the PC copies sessions between that file and the hub, so
-a sleeping NAS cannot freeze the desktop bar.
+no sockets. `deploy/pc-sync.sh` on the PC copies sessions between that file and
+the hub, so a sleeping NAS cannot freeze the desktop bar.
 
 ## The app
 
@@ -61,8 +61,12 @@ mise install
 mise run dev          # http://localhost:8080
 ```
 
-The first boot writes `data/token` with mode 0600. The web app asks for that
-token once and keeps it in `localStorage`.
+The first boot writes `data/token` with mode 0600. The web app asks for that token
+once and keeps it in `localStorage`.
+
+`mise run dev` starts the server, copies that token to the clipboard as soon as
+the file exists, and opens the page in the browser once the port answers. To copy
+the token on its own, run `mise run token`.
 
 To load the history that already sits in the desktop file:
 
@@ -99,10 +103,11 @@ on its own.
 Bun 1.4, Hono 4.13, Zod 4, `bun:sqlite`, Preact 11, Biome 2.5 and TypeScript 7.
 That is three runtime dependencies and three for development.
 
-There is no build command. `src/server.ts` imports `web/index.html` with
-`{ type: "html" }`, and Bun bundles the `.tsx` files behind it when a page is
-requested. `bun --watch` restarts the server, and no `dist/` directory exists to
-go stale.
+In development there is no build step. `src/server.ts` imports `web/index.html`
+with `{ type: "html" }`, and Bun bundles the `.tsx` files behind it when a page is
+requested, which is what makes `bun --watch` enough. The image runs one
+`bun build` and serves the result from `dist/`, because bundling during a request
+returned an empty body inside the container.
 
 `compose.yaml` in the repo root builds straight from a checkout. The NAS uses its
 own file, because the path there is a downloaded tarball. See [docs/nas.md](docs/nas.md).
@@ -117,22 +122,25 @@ one household and not fine for a network with devices you do not trust. Adding T
 later means a reverse proxy in front of the container, and nothing in the app has
 to change.
 
-The same limit decides what can happen while the page is in the background. The
-rest countdown keeps the right value because it is worked out from a timestamp,
-and the round moves on as soon as the page is back, but a sound or a notification
-at the moment it ends needs a secure context. The audio cue works while the page
-is open. The notification call in `web/alarm.ts` is already there and stays inert
-until the hub speaks https.
+The same limit applies while the page is in the background. The countdown stays
+correct because it is computed from a timestamp, and the round advances as soon as
+the page returns, but a sound or a notification at the moment a rest ends needs a
+secure context. The audio cue works while the page is open. `web/alarm.ts` already
+calls the notification API and stays silent until the hub speaks https.
 
-## Next
+## Sync
 
-The bridge on the PC is not written yet. It will push the local sessions to
-`POST /api/sessions`, then feed `GET /api/export` into
-`opushy-state.py state merge`.
+`deploy/pc-sync.sh` moves sessions between the desktop tracker and the hub, in
+both directions. It reads the hub address and token from
+`~/.config/opushy/sync.env`.
 
-The plugin side is ready. `state merge` holds an exclusive `flock` for the whole
-read-modify-write, so a bridge and the panel cannot both decide what the file
-says.
+Upload sends every local session, and the hub keeps the ones it was missing.
+Download feeds `GET /api/export` into `opushy-state.py state merge`, which takes
+the file lock and writes only when something was new.
+
+The plugin side is ready for it. `state merge` holds an exclusive `flock` for the
+whole read-modify-write, so the bridge and the panel cannot both decide what the
+file says.
 
 ## Licence
 

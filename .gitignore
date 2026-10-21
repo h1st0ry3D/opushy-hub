@@ -3,3 +3,4 @@ data/
 dist/
 *.local
 .DS_Store
+justfile

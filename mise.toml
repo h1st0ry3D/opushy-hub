@@ -1,9 +1,6 @@
 [tools]
 bun = "1.4.3"
 
-[tasks.dev]
-run = "bun run dev"
-
 [tasks.start]
 run = "bun run start"
 
@@ -15,3 +12,62 @@ run = "bun run check"
 
 [tasks.fix]
 run = "bun run fix"
+
+# Starts the watcher and hands the terminal to it. The token copy and the browser
+# tab run beside the server rather than before it, so a first run does not wait
+# on a file the server has not written or on a port it has not bound yet.
+[tasks.dev]
+quiet = true
+run = '''
+mise run token &
+mise run open &
+exec bun run dev
+'''
+
+# Opens the page once the server answers. The wait matters because a browser that
+# arrives first gets a connection refused and shows nothing.
+[tasks.open]
+description = "Open the app in the browser once the dev server answers"
+dir = "{{config_root}}"
+quiet = true
+run = '''
+for _ in $(seq 1 60); do
+  curl -fsS -o /dev/null http://localhost:8080/ 2>/dev/null && break
+  sleep 0.25
+done
+curl -fsS -o /dev/null http://localhost:8080/ 2>/dev/null || {
+  echo "the server did not answer on :8080, not opening a tab" >&2
+  exit 0
+}
+# omarchy-launch-browser knows which browser this desktop uses. Fall back to the
+# freedesktop handler, and stay quiet if neither is there.
+if command -v omarchy-launch-browser >/dev/null; then
+  omarchy-launch-browser http://localhost:8080 >/dev/null 2>&1 || true
+elif command -v xdg-open >/dev/null; then
+  xdg-open http://localhost:8080 >/dev/null 2>&1 || true
+fi
+'''
+
+# The dev server writes its token next to the database on first boot. This puts
+# it on the clipboard for the page at http://localhost:8080.
+#
+# It waits for the file rather than demanding it, because `dev` starts it in the
+# background at the same moment as the server, and on a first run the server has
+# not written the token yet.
+#
+# dir pins the working directory to this file's folder, so the relative path is
+# right whether the task is run from here or from a subfolder.
+[tasks.token]
+description = "Copy the dev server's token to the clipboard"
+dir = "{{config_root}}"
+quiet = true
+run = '''
+command -v wl-copy >/dev/null || { echo "no wl-copy on this system" >&2; exit 1; }
+for _ in $(seq 1 40); do
+  [ -s data/token ] && break
+  sleep 0.5
+done
+[ -s data/token ] || { echo "no data/token after 20s, is the server starting?" >&2; exit 1; }
+tr -d '\r\n' < data/token | wl-copy
+echo "dev token copied, $(tr -d '\n' < data/token | wc -c | tr -d ' ') characters"
+'''

@@ -1,7 +1,8 @@
 # Deploying on the NAS
 
 The hub runs as one container with a bind mount for its database. This page
-covers the install, the update and the two failures that DSM causes.
+covers the install, the update, the desktop sync, and the DSM failures worth
+recognising.
 
 The instructions assume DSM 7.2 or later, Container Manager installed, and a
 shared folder at `/volume1/docker`. Adjust the paths if yours differ.
@@ -25,20 +26,20 @@ sudo mkdir -p /volume1/docker/opushy-hub/data
 sudo chown -R 1000:1000 /volume1/docker/opushy-hub/data
 ```
 
-Download the source at a pinned commit. Replace the SHA when you deploy a newer
-one.
+Download the source. A first install takes the tip of `main`, and
+`deploy/nas-update.sh` pins each update to a commit after that.
 
 ```sh
 cd /volume1/docker/opushy-hub
-SHA=15530ba98ffbb2f834c55732cf3996a8a371a27b
-curl -fsSL -o /tmp/hub.tar.gz "https://github.com/h1st0ry3D/opushy-hub/archive/${SHA}.tar.gz"
+curl -fsSL -o /tmp/hub.tar.gz "https://github.com/h1st0ry3D/opushy-hub/archive/main.tar.gz"
 mkdir -p src
 sudo tar -xzf /tmp/hub.tar.gz -C src --strip-components=1
 ls src
 ```
 
-That should print `Dockerfile`, `package.json`, `bun.lock`, `core`, `scripts`,
-`src` and `web`.
+That should print `Dockerfile`, `package.json`, `bun.lock`, `core`, `deploy`,
+`scripts`, `src` and `web`. `--strip-components=1` removes the
+`opushy-hub-main/` folder the archive wraps everything in.
 
 Write `/volume1/docker/opushy-hub/docker-compose.yaml`:
 
@@ -108,11 +109,11 @@ check   health=healthy page=200 688
 deployed 3e8dd52c44ff, recorded in deployed-sha
 ```
 
-What it does, in order: resolve the commit, download the tarball, unpack it into
-`src.new` with one level stripped, check that the tree carries the files the image
-copies, move `src` aside to `src.old`, move `src.new` into place, rebuild, wait for
-the healthcheck, and confirm that `/` returns a real page rather than an empty
-body.
+The script resolves the commit, downloads the tarball, and unpacks it into
+`src.new` with one level stripped. It checks that the tree carries the files the
+image copies, moves `src` aside to `src.old`, and moves `src.new` into place. Then
+it rebuilds, waits for the healthcheck, and confirms that `/` returns a real page
+rather than an empty body.
 
 The last line of the check is the one that matters. `page=200 688` is a served
 page. `page=200 0` is the blank screen that a missing client build produces, and
@@ -151,17 +152,18 @@ does change it, the release notes will say so.
 ## Desktop sync
 
 The bar reads a local file and the phone writes to the hub, so something has to
-move sessions between them. That is `deploy/pc-sync.sh`, run from the PC.
+move sessions between them. `deploy/pc-sync.sh` does that, and it runs on the PC
+from the project checkout.
 
 ```sh
-just sync         # both directions
-just upload       # desktop to the hub
-just download     # hub to the desktop
-just status       # what each side holds, writes nothing
+cd ~/github/opushy-hub
+deploy/pc-sync.sh              # both directions
+deploy/pc-sync.sh --upload     # desktop to the hub
+deploy/pc-sync.sh --download   # hub to the desktop
+deploy/pc-sync.sh --dry-run    # what each side holds, writes nothing
 ```
 
-The recipes live in `~/.justfile` and call the script. The script reads the hub
-address and token from `~/.config/opushy/sync.env`:
+It reads the hub address and token from `~/.config/opushy/sync.env`:
 
 ```sh
 OPSHUB_URL=http://192.168.0.9:8080
@@ -174,20 +176,39 @@ keeps the ones it was missing. Download sends the hub's whole history into
 something was new, so a run that lost a race with the panel is fixed by the next
 one.
 
-The unit in `~/.config/systemd/user/` runs the script once at login, with
-`--wait 300`. That wait exists because at login the NAS may still be booting and
-the link may not be up yet: a single probe a second after the session starts
-finds nothing, and the first version of this quietly gave up. The script now
-polls the hub for up to five minutes before reporting that it never appeared, and
-`TimeoutStartSec=360` gives it room to do that without the unit being killed.
+To keep the two in step without remembering, put this in
+`~/.config/systemd/user/opushy-sync.service`:
 
-A user unit starts with the desktop session, so `loginctl enable-linger $USER` is
-what makes it run before you log in. That is already enabled here.
+```ini
+[Unit]
+Description=Sync Opushy sessions between the desktop tracker and the hub
 
-Two limits worth knowing. Sessions sync; the record does not travel on its own,
-it rises when a session beats it, which both sides work out independently. And
-the bar is stale until the next sync, so a session recorded on the phone appears
-after the next login or a `just sync`.
+[Service]
+Type=oneshot
+ExecStart=%h/github/opushy-hub/deploy/pc-sync.sh --wait 300
+TimeoutStartSec=360
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user daemon-reload
+systemctl --user enable --now opushy-sync.service
+```
+
+The unit runs the script once at login. The NAS may still be booting and the link
+may not be up at that moment, so the script polls the hub for up to five minutes
+rather than probing it once, and `TimeoutStartSec=360` keeps systemd from killing
+it during that wait.
+
+A user unit starts with the desktop session. `loginctl enable-linger $USER` makes
+it run before login as well.
+
+Two things do not sync. The record does not travel as a field, it rises when a
+session beats it and both sides work that out on their own. And the bar is stale
+until the next run, so a session recorded on the phone appears there after the
+next login or a manual `deploy/pc-sync.sh`.
 
 ## When it fails
 
