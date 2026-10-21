@@ -5,6 +5,7 @@
 #   pc-sync.sh --upload       desktop to hub
 #   pc-sync.sh --download     hub to desktop
 #   pc-sync.sh --dry-run      what each side holds, writes nothing
+#   pc-sync.sh --wait 60      how long to wait for the hub to answer (default 300)
 #
 # Configuration lives in ~/.config/opushy/sync.env, or in the environment:
 #
@@ -43,15 +44,22 @@ TOKEN="${OPSHUB_TOKEN:-}"
 
 mode=both
 dry=0
+wait_seconds="${OPSHUB_WAIT:-300}"
 for arg in "$@"; do
   case "$arg" in
     --upload) mode=upload ;;
     --download) mode=download ;;
     --dry-run) dry=1 ;;
+    --wait)
+      shift || true
+      wait_seconds="${1:-300}"
+      ;;
     -h | --help)
-      sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+      # the comment block under the shebang, however long it grows
+      awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
       exit 0
       ;;
+    [0-9]*) wait_seconds="$arg" ;;
     *)
       echo "unknown option: $arg" >&2
       exit 2
@@ -156,8 +164,26 @@ download() {
   say "download $(printf '%s' "$merged" | describe)"
 }
 
-if ! reachable; then
-  skip "hub not reachable at $HUB, nothing synced"
+# At login the NAS may still be booting and the link may not be up, so one probe
+# is not enough. The unit runs this with --wait 300, which covers a NAS that
+# takes a couple of minutes without leaving a failed unit when it never appears.
+wait_for_hub() {
+  local deadline=$((SECONDS + wait_seconds))
+  reachable && return 0
+  [ "$wait_seconds" -gt 0 ] || return 1
+  say "hub not up yet at $HUB, waiting up to ${wait_seconds}s"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    sleep 5
+    if reachable; then
+      say "hub answered after ${SECONDS}s"
+      return 0
+    fi
+  done
+  return 1
+}
+
+if ! wait_for_hub; then
+  skip "hub still not reachable at $HUB after ${wait_seconds}s, nothing synced"
 fi
 
 if [ "$dry" = 1 ]; then

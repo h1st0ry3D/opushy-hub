@@ -174,10 +174,15 @@ keeps the ones it was missing. Download sends the hub's whole history into
 something was new, so a run that lost a race with the panel is fixed by the next
 one.
 
-`systemctl --user enable opushy-sync.service` already happened, and the unit in
-`~/.config/systemd/user/` runs `just sync` once at login. A user unit starts with
-the desktop session, so `loginctl enable-linger $USER` is only needed if you want
-it to run before you log in.
+The unit in `~/.config/systemd/user/` runs the script once at login, with
+`--wait 300`. That wait exists because at login the NAS may still be booting and
+the link may not be up yet: a single probe a second after the session starts
+finds nothing, and the first version of this quietly gave up. The script now
+polls the hub for up to five minutes before reporting that it never appeared, and
+`TimeoutStartSec=360` gives it room to do that without the unit being killed.
+
+A user unit starts with the desktop session, so `loginctl enable-linger $USER` is
+what makes it run before you log in. That is already enabled here.
 
 Two limits worth knowing. Sessions sync; the record does not travel on its own,
 it rises when a session beats it, which both sides work out independently. And
