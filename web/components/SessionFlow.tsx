@@ -1,5 +1,13 @@
-import { useEffect, useState } from "preact/hooks"
+import { useEffect, useRef, useState } from "preact/hooks"
 import type { State } from "../../src/db"
+import {
+  askNotifyPermission,
+  cancelAlarm,
+  notify,
+  playAlarm,
+  scheduleAlarm,
+  unlockAudio,
+} from "../alarm"
 
 // Round 1 to 3 with a rest between them, plus the confirmation in front of
 // throwing a session away. All three states live in one component because the
@@ -18,45 +26,138 @@ export function SessionFlow(props: {
   const [confirming, setConfirming] = useState(false)
   const [previousRecord, setPreviousRecord] = useState(0)
   const [busy, setBusy] = useState(false)
+  // Epoch milliseconds the rest ends at. The countdown is derived from this
+  // rather than decremented, so a backgrounded tab that misses every tick still
+  // reports the right number when it comes back.
+  const [endsAt, setEndsAt] = useState<number | null>(null)
 
-  // One tick a second while a rest runs. `remaining` sits in the dependency
-  // list, so the effect re-arms the timer after each tick.
-  useEffect(() => {
-    if (!counting || paused) return
-    const id = setTimeout(() => setRemaining((value) => Math.max(0, value - 1)), 1000)
-    return () => clearTimeout(id)
-  }, [counting, paused, remaining])
+  function deadlineFrom(seconds: number): number {
+    return Date.now() + seconds * 1000
+  }
 
-  // A rest only ever runs between rounds, so it can only move forward one.
+  function secondsLeft(deadline: number): number {
+    return Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+  }
+
+  // A rest is settled exactly once, however many things notice that it is over.
+  const settled = useRef(true)
+
+  // Everything about a running rest lives here, and the round moves on from
+  // inside the tick rather than from an effect.
+  //
+  // An effect runs after a paint, and a backgrounded page does not paint, so an
+  // effect is the one place this cannot be decided. A timer callback plus the
+  // visibility change covers both cases: the page is running and the timer
+  // fires, or the page was away and the listener resolves it the moment it
+  // returns.
   useEffect(() => {
-    if (!counting || remaining > 0) return
-    setCounting(false)
-    setPaused(false)
-    setRound((value) => value + 1)
-  }, [counting, remaining])
+    if (!counting || paused || endsAt === null) return
+    const deadline = endsAt
+
+    const settle = () => {
+      if (settled.current) return
+      settled.current = true
+      // More than a second past the deadline means the page was not running
+      // when it passed, so the tone scheduled on the audio clock never played.
+      const missed = Date.now() - deadline > 1500
+      cancelAlarm()
+      setCounting(false)
+      setPaused(false)
+      setEndsAt(null)
+      setRemaining(0)
+      setRound((value) => value + 1)
+      if (missed) playAlarm()
+      notify("Rest over", "Next round when you are ready")
+    }
+
+    const tick = () => {
+      const left = secondsLeft(deadline)
+      setRemaining(left)
+      if (left === 0) settle()
+    }
+
+    tick()
+    const id = setInterval(tick, 250)
+    document.addEventListener("visibilitychange", tick)
+    window.addEventListener("pageshow", tick)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener("visibilitychange", tick)
+      window.removeEventListener("pageshow", tick)
+    }
+  }, [counting, paused, endsAt])
+
+  // Leaving the panel stops the cue, so a tone cannot fire into a screen that is
+  // no longer showing a rest.
+  useEffect(() => () => cancelAlarm(), [])
 
   const resting = counting && !confirming
   const working = !counting && !confirming
   const stopping = confirming
 
   function start() {
+    // The first tap is the gesture that lets the browser play audio later.
+    unlockAudio()
+    askNotifyPermission()
     setPreviousRecord(state.maxPushups)
     setSessionReps(state.nextReps)
     setRound(1)
     setCounting(false)
     setPaused(false)
     setRemaining(0)
+    setEndsAt(null)
     setConfirming(false)
   }
 
   function beginRest() {
-    setRemaining(state.restSeconds)
+    settled.current = false
+    const deadline = deadlineFrom(state.restSeconds)
+    setEndsAt(deadline)
+    setRemaining(secondsLeft(deadline))
     setCounting(true)
     setPaused(false)
+    scheduleAlarm(state.restSeconds)
+  }
+
+  function togglePause() {
+    if (paused) {
+      settled.current = false
+      const deadline = deadlineFrom(remaining)
+      setEndsAt(deadline)
+      setPaused(false)
+      scheduleAlarm(remaining)
+      return
+    }
+    // Freeze the value first, then drop the deadline so the tick stops.
+    cancelAlarm()
+    setRemaining(endsAt === null ? remaining : secondsLeft(endsAt))
+    setEndsAt(null)
+    setPaused(true)
+  }
+
+  function abandon() {
+    cancelAlarm()
+    setConfirming(false)
+    setCounting(false)
+    setPaused(false)
+    setRound(0)
+    setSessionReps(0)
+    setRemaining(0)
+    setEndsAt(null)
+  }
+
+  function skipRest() {
+    cancelAlarm()
+    setCounting(false)
+    setPaused(false)
+    setRemaining(0)
+    setEndsAt(null)
+    setRound((value) => value + 1)
   }
 
   async function complete() {
     if (sessionReps <= 0 || busy) return
+    cancelAlarm()
     setBusy(true)
     try {
       await onComplete(sessionReps, previousRecord)
@@ -121,20 +222,12 @@ export function SessionFlow(props: {
 
       <div class="row" style={{ gap: "var(--s3)" }}>
         {resting && (
-          <button type="button" onClick={() => setPaused((value) => !value)}>
+          <button type="button" onClick={togglePause}>
             {paused ? "Continue" : "Pause"}
           </button>
         )}
         {resting && (
-          <button
-            type="button"
-            onClick={() => {
-              setCounting(false)
-              setPaused(false)
-              setRemaining(0)
-              setRound((value) => value + 1)
-            }}
-          >
+          <button type="button" onClick={skipRest}>
             Skip
           </button>
         )}
@@ -146,16 +239,7 @@ export function SessionFlow(props: {
         )}
 
         {stopping && (
-          <button
-            type="button"
-            onClick={() => {
-              setConfirming(false)
-              setRound(0)
-              setSessionReps(0)
-              setRemaining(0)
-              setCounting(false)
-            }}
-          >
+          <button type="button" onClick={abandon}>
             No
           </button>
         )}
@@ -167,17 +251,7 @@ export function SessionFlow(props: {
         )}
 
         {stopping && (
-          <button
-            type="button"
-            class="primary"
-            onClick={() => {
-              setConfirming(false)
-              setRound(0)
-              setSessionReps(0)
-              setRemaining(0)
-              setCounting(false)
-            }}
-          >
+          <button type="button" class="primary" onClick={abandon}>
             Yes
           </button>
         )}

@@ -117,6 +117,13 @@ one household and not fine for a network with devices you do not trust. Adding T
 later means a reverse proxy in front of the container, and nothing in the app has
 to change.
 
+The same limit decides what can happen while the page is in the background. The
+rest countdown keeps the right value because it is worked out from a timestamp,
+and the round moves on as soon as the page is back, but a sound or a notification
+at the moment it ends needs a secure context. The audio cue works while the page
+is open. The notification call in `web/alarm.ts` is already there and stays inert
+until the hub speaks https.
+
 ## Next
 
 The bridge on the PC is not written yet. It will push the local sessions to
