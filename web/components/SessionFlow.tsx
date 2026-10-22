@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 import type { State } from "../../src/db"
-import { cancelAlarm, notify, scheduleAlarm, settleAlarm } from "../alarm"
+import { cancelAlarm, notify, playAlarm, resumeAudio, scheduleAlarm, settleAlarm } from "../alarm"
+import { keepScreenAwake, releaseScreen } from "../awake"
 
 // Round 1 to 3 with a rest between them, plus the confirmation in front of
 // throwing a session away. All three states live in one component because the
@@ -86,12 +87,31 @@ export function SessionFlow(props: {
   }, [counting, paused, endsAt])
 
   // Leaving the panel stops the cue, so a tone cannot fire into a screen that is
-  // no longer showing a rest.
-  useEffect(() => () => cancelAlarm(), [])
+  // no longer showing a rest. Any tap also gives iOS the gesture it needs to
+  // resume audio, which is how a cue that ended while the phone slept is heard.
+  useEffect(() => {
+    const tap = () => {
+      if (resumeAudio()) setCueBlocked(false)
+    }
+    document.addEventListener("pointerdown", tap)
+    return () => {
+      document.removeEventListener("pointerdown", tap)
+      cancelAlarm()
+      releaseScreen()
+    }
+  }, [])
 
   const resting = counting && !confirming
   const working = !counting && !confirming
   const stopping = confirming
+
+  // A locked screen stops the audio clock, so the rest holds the screen on for
+  // its own length. The lock is released on pause, skip, end and unmount.
+  useEffect(() => {
+    if (!counting || paused) return
+    keepScreenAwake()
+    return () => releaseScreen()
+  }, [counting, paused])
 
   function beginRest() {
     settled.current = false
@@ -128,7 +148,10 @@ export function SessionFlow(props: {
   }
 
   function skipRest() {
-    cancelAlarm()
+    // Skipping ends the rest the way the clock would, so the cue plays now
+    // instead of at the old deadline. It is also the quickest way to check the
+    // sound without waiting out a rest.
+    playAlarm()
     setCounting(false)
     setPaused(false)
     setRemaining(0)
@@ -237,8 +260,8 @@ export function SessionFlow(props: {
 
       {cueBlocked && (
         <div class="center" style={{ fontSize: "11px", lineHeight: 1.5, color: "var(--keep)" }}>
-          The rest ended, but this browser would not play the cue. Allow audio for this site in its
-          settings.
+          The rest ended while the page was asleep, so the cue could not play. Tap the screen to
+          hear it.
         </div>
       )}
 
