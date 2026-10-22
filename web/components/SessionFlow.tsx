@@ -1,30 +1,28 @@
 import { useEffect, useRef, useState } from "preact/hooks"
 import type { State } from "../../src/db"
-import {
-  askNotifyPermission,
-  cancelAlarm,
-  notify,
-  scheduleAlarm,
-  settleAlarm,
-  unlockAudio,
-} from "../alarm"
+import { cancelAlarm, notify, scheduleAlarm, settleAlarm } from "../alarm"
 
 // Round 1 to 3 with a rest between them, plus the confirmation in front of
 // throwing a session away. All three states live in one component because the
 // round counter, the buttons and the confirm share the same place.
+//
+// This screen exists only while a session runs. The recorded chain and its Start
+// button are the idle screen, so there is no "Ready" state here: the reps are
+// frozen from the state the app had when Start was pressed.
 export function SessionFlow(props: {
   state: State
   onComplete: (reps: number, previousRecord: number) => Promise<void>
+  onExit: () => void
 }) {
-  const { state, onComplete } = props
+  const { state, onComplete, onExit } = props
 
-  const [round, setRound] = useState(0)
-  const [sessionReps, setSessionReps] = useState(0)
+  const [round, setRound] = useState(1)
+  const [sessionReps] = useState(state.nextReps)
   const [remaining, setRemaining] = useState(0)
   const [counting, setCounting] = useState(false)
   const [paused, setPaused] = useState(false)
   const [confirming, setConfirming] = useState(false)
-  const [previousRecord, setPreviousRecord] = useState(0)
+  const [previousRecord] = useState(state.maxPushups)
   const [busy, setBusy] = useState(false)
   // Epoch milliseconds the rest ends at. The countdown is derived from this
   // rather than decremented, so a backgrounded tab that misses every tick still
@@ -95,20 +93,6 @@ export function SessionFlow(props: {
   const working = !counting && !confirming
   const stopping = confirming
 
-  function start() {
-    // The first tap is the gesture that lets the browser play audio later.
-    unlockAudio()
-    askNotifyPermission()
-    setPreviousRecord(state.maxPushups)
-    setSessionReps(state.nextReps)
-    setRound(1)
-    setCounting(false)
-    setPaused(false)
-    setRemaining(0)
-    setEndsAt(null)
-    setConfirming(false)
-  }
-
   function beginRest() {
     settled.current = false
     setCueBlocked(false)
@@ -138,13 +122,9 @@ export function SessionFlow(props: {
 
   function abandon() {
     cancelAlarm()
-    setConfirming(false)
-    setCounting(false)
-    setPaused(false)
-    setRound(0)
-    setSessionReps(0)
-    setRemaining(0)
-    setEndsAt(null)
+    // The chain is the idle screen again, and the session left no trace: the
+    // hub was never told about it.
+    onExit()
   }
 
   function skipRest() {
@@ -161,16 +141,15 @@ export function SessionFlow(props: {
     cancelAlarm()
     setBusy(true)
     try {
+      // The parent records the session and swaps this screen for the
+      // congratulations, so there is nothing to reset here.
       await onComplete(sessionReps, previousRecord)
-      setRound(0)
-      setSessionReps(0)
     } finally {
       setBusy(false)
     }
   }
 
   function next() {
-    if (round === 0) return start()
     if (counting) return
     if (round >= state.rounds) {
       void complete()
@@ -183,11 +162,9 @@ export function SessionFlow(props: {
     ? "Stop current session?"
     : counting
       ? `${remaining}s`
-      : round > 0
-        ? `${sessionReps}× Push-ups`
-        : `Ready: ${state.nextReps}×`
+      : `${sessionReps}× Push-ups`
 
-  const primaryLabel = round === 0 ? "Start" : round >= state.rounds ? "Done" : "Next"
+  const primaryLabel = round >= state.rounds ? "Done" : "Next"
 
   return (
     <div class="card" style={{ gap: "var(--s4)" }}>
@@ -206,7 +183,7 @@ export function SessionFlow(props: {
 
       {!stopping && (
         <div class="center muted" style={{ fontSize: "13px" }}>
-          {counting ? "Rest, pause or skip" : `Round ${round || 1} / ${state.rounds}`}
+          {counting ? "Rest, pause or skip" : `Round ${round} / ${state.rounds}`}
         </div>
       )}
 
@@ -233,7 +210,7 @@ export function SessionFlow(props: {
           </button>
         )}
 
-        {working && round > 0 && (
+        {working && (
           <button type="button" onClick={() => setConfirming(true)}>
             Stop
           </button>

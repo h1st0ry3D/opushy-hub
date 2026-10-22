@@ -186,28 +186,6 @@ input {
   font-variant-numeric: tabular-nums;
 }
 
-.segmented {
-  display: flex;
-  gap: var(--s2);
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: var(--s2);
-}
-
-.segmented button {
-  flex: 1;
-  min-height: 36px;
-  font-size: 13px;
-  border: 0;
-  background: transparent;
-}
-
-.segmented button[aria-selected="true"] {
-  background: var(--surface-2);
-  color: var(--fg);
-}
-
 .toast {
   background: var(--surface-2);
   border: 1px solid var(--line);

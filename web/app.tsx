@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks"
 import type { State } from "../src/db"
+import { askNotifyPermission, unlockAudio } from "./alarm"
 import { api, getToken, HttpError, setToken } from "./api"
 import {
   Celebration,
@@ -16,7 +17,10 @@ export function App() {
   const [state, setState] = useState<State | null>(null)
   const [error, setError] = useState("")
   const [needToken, setNeedToken] = useState(getToken() === "")
-  const [tab, setTab] = useState<"session" | "history">("session")
+  // One screen at a time, like the panel: the recorded chain until Start is
+  // pressed, then the session, then the congratulations. The chain is not on
+  // screen while a session runs, so a round cannot be mistaken for it.
+  const [training, setTraining] = useState(false)
   const [page, setPage] = useState(0)
   const [celebrating, setCelebrating] = useState<CelebrationModel | null>(null)
 
@@ -45,7 +49,19 @@ export function App() {
   async function complete(reps: number, previousRecord: number) {
     const result = await api.commit(new Date().toISOString(), reps)
     applyState(result)
+    // The session is recorded before the congratulations appear, so the screen
+    // behind them is already the next run's chain.
+    setTraining(false)
     setCelebrating(celebrationFrom(result, reps, previousRecord))
+  }
+
+  function startTraining() {
+    // The Start tap is the gesture that lets the browser play the rest cue
+    // later, so audio and notifications are unlocked from here, not from the
+    // session screen.
+    unlockAudio()
+    askNotifyPermission()
+    setTraining(true)
   }
 
   async function saveMax(value: number) {
@@ -114,30 +130,8 @@ export function App() {
         </button>
       </div>
 
-      <div class="segmented" role="tablist">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "session"}
-          onClick={() => setTab("session")}
-        >
-          Session
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={tab === "history"}
-          onClick={() => {
-            setTab("history")
-            setPage(Math.max(0, pageTotal - 1))
-          }}
-        >
-          Activity
-        </button>
-      </div>
-
-      {tab === "session" ? (
-        <SessionFlow state={state} onComplete={complete} />
+      {training ? (
+        <SessionFlow state={state} onComplete={complete} onExit={() => setTraining(false)} />
       ) : (
         <div class="card">
           <div class="mono-num center" style={{ fontSize: "16px" }}>
@@ -153,6 +147,9 @@ export function App() {
           <div class="center faint" style={{ fontSize: "11px" }}>
             On track 2 days or less • Keep 3 days • Drop 4 days or more
           </div>
+          <button type="button" class="primary" onClick={startTraining}>
+            Start
+          </button>
         </div>
       )}
 
