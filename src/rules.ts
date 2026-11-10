@@ -13,6 +13,7 @@ export type HistoryEntry = { time: string; reps: number }
 export type Rules = {
   ROUNDS: number
   REST_SECONDS: number
+  TOO_HARD_STEP: number
   PAGE_SIZE: number
   HISTORY_MAX: number
   MAX_REPS: number
@@ -24,6 +25,7 @@ export type Rules = {
   fallback: number
   baseReps(maxPushups: number): number
   nextReps(maxPushups: number, storedReps: number, lastTrainingDate: string, nowMs: number): number
+  softenReps(reps: number): number
   isRecord(target: number, maxPushups: number): boolean
   daysSince(value: string, nowMs: number): number
   statusForDays(days: number): number
@@ -31,7 +33,6 @@ export type Rules = {
   isValidTimestamp(value: unknown): boolean
   entryTime(entry: unknown): string
   entryReps(entry: unknown): number
-  msUntilNextDay(nowMs: number): number
 }
 
 function load(): Rules {

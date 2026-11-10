@@ -16,6 +16,8 @@ var MS_PER_DAY = 86400000
 var UNKNOWN_DAYS = 999
 
 var BASE_RATIO = 0.75
+// How many reps "Too Hard" takes off a running session's target.
+var TOO_HARD_STEP = 2
 
 // ---- storage limits, mirrored in state/opushy-state.py ----
 var MAX_REPS = 10000
@@ -47,24 +49,13 @@ function parseTimestamp(value) {
     return isFinite(ms) ? ms : NaN
 }
 
-// Whole days between a stored timestamp and `nowMs`. A date in the future gives
-// a negative count, which reads as recent.
+// Whole days between a stored timestamp and `nowMs`. A timestamp in the future
+// reads as today rather than as a negative count: the clock can be corrected
+// backwards after a session was saved, and "-1d" in the bar is not a day count.
 function daysSince(value, nowMs) {
     var ms = parseTimestamp(value)
     if (!isFinite(ms)) return UNKNOWN_DAYS
-    return Math.floor((nowMs - ms) / MS_PER_DAY)
-}
-
-// Ms from `nowMs` to the next day boundary, so a day count can be re-evaluated
-// when it actually changes. daysSince counts whole 24h periods from a UTC
-// instant, so the boundary is UTC midnight rather than local midnight, and the
-// caller has to follow it or the count flips at the wrong hour. The few seconds
-// of slack keep the tick off the boundary itself, where a session saved a
-// moment earlier would already read as the day before.
-function msUntilNextDay(nowMs) {
-    var d = new Date(nowMs)
-    var next = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1, 0, 0, 3)
-    return Math.max(1000, next - nowMs)
+    return Math.max(0, Math.floor((nowMs - ms) / MS_PER_DAY))
 }
 
 function statusForDays(days) {
@@ -89,6 +80,15 @@ function nextReps(maxPushups, storedReps, lastTrainingDate, nowMs) {
     if (days <= ON_TRACK_MAX_DAYS) return Math.min(MAX_REPS, stored + 1)
     if (days === KEEP_DAYS) return stored
     return Math.max(1, stored - (days - KEEP_DAYS))
+}
+
+// The number a run of rounds drops to when the session said it was too hard:
+// two reps off the target the rounds were running at, never below one. The
+// rounds that are still ahead run at this number and it is the one recorded at
+// the end, so the next session's +1 lands on top of the softened value.
+function softenReps(reps) {
+    if (!(reps > 0)) return 0
+    return Math.max(1, Math.floor(reps) - TOO_HARD_STEP)
 }
 
 // A record is beaten, not matched: the same target again leaves the record

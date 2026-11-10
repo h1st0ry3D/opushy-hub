@@ -33,6 +33,16 @@ export function isRecord(target: number, maxPushups: number): boolean {
   return target > maxPushups
 }
 
+// "Too Hard" takes two reps off the target the remaining rounds run at, never
+// below one. Mirrored from `softenReps` in core/Progression.js, which the server
+// loads: that file is a QML script library and cannot be imported here, so this
+// is the one copy the browser carries. tests/soften.test.ts holds the two
+// together.
+export function softenReps(reps: number): number {
+  if (!(reps > 0)) return 0
+  return Math.max(1, Math.floor(reps) - 2)
+}
+
 export function pageCount(state: State): number {
   return Math.max(1, Math.ceil(state.history.length / state.pageSize))
 }

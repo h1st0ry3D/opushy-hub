@@ -2,27 +2,38 @@ import { useEffect, useRef, useState } from "preact/hooks"
 import type { State } from "../../src/db"
 import { cancelAlarm, notify, playAlarm, resumeAudio, scheduleAlarm, settleAlarm } from "../alarm"
 import { keepScreenAwake, releaseScreen } from "../awake"
+import { softenReps } from "../status"
 
-// Round 1 to 3 with a rest between them, plus the confirmation in front of
-// throwing a session away. All three states live in one component because the
-// round counter, the buttons and the confirm share the same place.
+// The question in front of either way out of a round: throwing the session away,
+// or taking two reps off it. It lives in the app rather than here because the
+// header's close button asks the first one and this screen's Yes and No answer
+// it, so two components have to agree on it.
+export type SessionQuestion = null | "stop" | "too-hard"
+
+// Round 1 to 3 with a rest between them, plus the two questions in front of
+// ending one early. All of these states live in one component because the round
+// counter, the buttons and the questions share the same place.
 //
 // This screen exists only while a session runs. The recorded chain and its Start
 // button are the idle screen, so there is no "Ready" state here: the reps are
-// frozen from the state the app had when Start was pressed.
+// frozen from the state the app had when Start was pressed, and only "Too Hard"
+// moves them from there.
 export function SessionFlow(props: {
   state: State
+  question: SessionQuestion
+  onQuestion: (question: SessionQuestion) => void
   onComplete: (reps: number, previousRecord: number) => Promise<void>
   onExit: () => void
 }) {
-  const { state, onComplete, onExit } = props
+  const { state, question, onQuestion, onComplete, onExit } = props
 
   const [round, setRound] = useState(1)
-  const [sessionReps] = useState(state.nextReps)
+  // Frozen at Start, and moved only by "Too Hard": the rest of the session runs
+  // at whatever this says, and it is what complete() records.
+  const [sessionReps, setSessionReps] = useState(state.nextReps)
   const [remaining, setRemaining] = useState(0)
   const [counting, setCounting] = useState(false)
   const [paused, setPaused] = useState(false)
-  const [confirming, setConfirming] = useState(false)
   const [previousRecord] = useState(state.maxPushups)
   const [busy, setBusy] = useState(false)
   // Epoch milliseconds the rest ends at. The countdown is derived from this
@@ -101,9 +112,11 @@ export function SessionFlow(props: {
     }
   }, [])
 
-  const resting = counting && !confirming
-  const working = !counting && !confirming
-  const stopping = confirming
+  const asking = question !== null
+  const stopping = question === "stop"
+  const softening = question === "too-hard"
+  const resting = counting && !asking
+  const working = !counting && !asking
 
   // A locked screen stops the audio clock, so the rest holds the screen on for
   // its own length. The lock is released on pause, skip, end and unmount.
@@ -112,6 +125,20 @@ export function SessionFlow(props: {
     keepScreenAwake()
     return () => releaseScreen()
   }, [counting, paused])
+
+  // The stop question is reachable from the header at any point, rest included,
+  // and a rest left running would end under the question and move the round on
+  // behind the answer. Opened over a rest, it is frozen the same way Pause
+  // freezes it, and Continue resumes it if the answer is No.
+  useEffect(() => {
+    if (question !== "stop" || !counting || paused) return
+    cancelAlarm()
+    setRemaining(endsAt === null ? remaining : secondsLeft(endsAt))
+    setEndsAt(null)
+    setPaused(true)
+    // Only the question opening is the trigger here; the rest is what it acts on,
+    // and re-running on every tick would freeze it a second time.
+  }, [question])
 
   function beginRest() {
     settled.current = false
@@ -165,7 +192,9 @@ export function SessionFlow(props: {
     setBusy(true)
     try {
       // The parent records the session and swaps this screen for the
-      // congratulations, so there is nothing to reset here.
+      // congratulations, so there is nothing to reset here. What it records is
+      // the reps the last round actually ran at, softened or not, so the next
+      // session is still one more than that.
       await onComplete(sessionReps, previousRecord)
     } finally {
       setBusy(false)
@@ -181,21 +210,36 @@ export function SessionFlow(props: {
     beginRest()
   }
 
+  // "Too Hard" asks first, and only on Yes does it take the two reps off. The
+  // round then ends the way Done ends it, so the rounds that are left run at the
+  // smaller number.
+  function tooHard() {
+    onQuestion(null)
+    if (counting) return
+    setSessionReps((value) => softenReps(value))
+    next()
+  }
+
   const headline = stopping
     ? "Stop current session?"
-    : counting
-      ? `${remaining}s`
-      : `${sessionReps}× Push-ups`
+    : softening
+      ? "Reduce reps by 2?"
+      : counting
+        ? `${remaining}s`
+        : `${sessionReps}× Push-ups`
 
-  const primaryLabel = round >= state.rounds ? "Done" : "Next"
+  const primaryLabel = round >= state.rounds ? "Finish" : "Done"
+  // Only the rounds with something still ahead of them can be softened: the last
+  // one finishes the session instead.
+  const canSoften = round < state.rounds
 
   return (
     <div class="card" style={{ gap: "var(--s4)" }}>
       <div
         class="mono-num center"
         style={{
-          fontSize: stopping ? "18px" : counting ? "32px" : "26px",
-          color: counting ? "var(--accent)" : "var(--fg)",
+          fontSize: asking ? "18px" : counting ? "32px" : "26px",
+          color: counting && !asking ? "var(--accent)" : "var(--fg)",
           minHeight: "56px",
           display: "grid",
           placeItems: "center",
@@ -204,13 +248,19 @@ export function SessionFlow(props: {
         {headline}
       </div>
 
-      {!stopping && (
+      {softening && (
+        <div class="center muted" style={{ fontSize: "13px", lineHeight: 1.5 }}>
+          {sessionReps}× → {softenReps(sessionReps)}× for the rest of the session
+        </div>
+      )}
+
+      {!asking && (
         <div class="center muted" style={{ fontSize: "13px" }}>
           {counting ? "Rest, pause or skip" : `Round ${round} / ${state.rounds}`}
         </div>
       )}
 
-      {!stopping && (
+      {!asking && (
         <div class="dots">
           {Array.from({ length: state.rounds }, (_, index) => {
             const step = index + 1
@@ -233,14 +283,16 @@ export function SessionFlow(props: {
           </button>
         )}
 
-        {working && (
-          <button type="button" onClick={() => setConfirming(true)}>
-            Stop
+        {working && canSoften && (
+          <button type="button" onClick={() => onQuestion("too-hard")}>
+            Too Hard
           </button>
         )}
 
-        {stopping && (
-          <button type="button" onClick={abandon}>
+        {/* Either question is answered by the same pair, and No is the same
+            move for both: the question closes and nothing else changes. */}
+        {asking && (
+          <button type="button" onClick={() => onQuestion(null)}>
             No
           </button>
         )}
@@ -251,8 +303,8 @@ export function SessionFlow(props: {
           </button>
         )}
 
-        {stopping && (
-          <button type="button" class="primary" onClick={abandon}>
+        {asking && (
+          <button type="button" class="primary" onClick={softening ? tooHard : abandon}>
             Yes
           </button>
         )}

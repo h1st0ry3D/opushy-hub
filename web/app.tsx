@@ -9,7 +9,7 @@ import {
 } from "./components/Celebration"
 import { DayBubble } from "./components/DayBubble"
 import { HistoryStrip } from "./components/HistoryStrip"
-import { SessionFlow } from "./components/SessionFlow"
+import { SessionFlow, type SessionQuestion } from "./components/SessionFlow"
 import { Setup } from "./components/Setup"
 import { pageCount } from "./status"
 
@@ -23,6 +23,10 @@ export function App() {
   const [training, setTraining] = useState(false)
   const [page, setPage] = useState(0)
   const [celebrating, setCelebrating] = useState<CelebrationModel | null>(null)
+  // The question in front of throwing a session away or softening it. It is here
+  // rather than in the session screen because the header's close button opens
+  // the first one and the screen's buttons answer it.
+  const [question, setQuestion] = useState<SessionQuestion>(null)
 
   // Every load lands on the newest page, which is what the bar does after it
   // reads the file. Paging back is still possible, the next load returns here.
@@ -51,6 +55,7 @@ export function App() {
     applyState(result)
     // The session is recorded before the congratulations appear, so the screen
     // behind them is already the next run's chain.
+    setQuestion(null)
     setTraining(false)
     setCelebrating(celebrationFrom(result, reps, previousRecord))
   }
@@ -61,7 +66,13 @@ export function App() {
     // session screen.
     unlockAudio()
     askNotifyPermission()
+    setQuestion(null)
     setTraining(true)
+  }
+
+  function leaveTraining() {
+    setQuestion(null)
+    setTraining(false)
   }
 
   async function saveMax(value: number) {
@@ -128,10 +139,30 @@ export function App() {
         >
           ⟳
         </button>
+        {/* Throwing the session away lives up here, not among the round
+            buttons. It asks first, and it steps aside while either question is
+            open. */}
+        {training && question === null && (
+          <button
+            type="button"
+            class="ghost"
+            style={{ flex: "0 0 44px", minHeight: "44px", fontSize: "20px" }}
+            aria-label="Stop session"
+            onClick={() => setQuestion("stop")}
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {training ? (
-        <SessionFlow state={state} onComplete={complete} onExit={() => setTraining(false)} />
+        <SessionFlow
+          state={state}
+          question={question}
+          onQuestion={setQuestion}
+          onComplete={complete}
+          onExit={leaveTraining}
+        />
       ) : (
         <div class="card">
           <div class="mono-num center" style={{ fontSize: "16px" }}>
