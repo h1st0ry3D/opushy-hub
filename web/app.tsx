@@ -130,15 +130,20 @@ export function App() {
             Record: {state.maxPushups}× • Round: {state.reps}× • {state.trainingDays} days
           </div>
         </div>
-        <button
-          type="button"
-          class="ghost"
-          style={{ flex: "0 0 44px", minHeight: "44px" }}
-          aria-label="Refresh"
-          onClick={() => void refresh()}
-        >
-          ⟳
-        </button>
+        {/* One header button at a time: a session screen has nothing to
+            refresh, because the flow holds the reps it started with, and the
+            extra button pushed the meta line onto two lines on a phone. */}
+        {!training && (
+          <button
+            type="button"
+            class="ghost"
+            style={{ flex: "0 0 44px", minHeight: "44px" }}
+            aria-label="Refresh"
+            onClick={() => void refresh()}
+          >
+            ⟳
+          </button>
+        )}
         {/* Throwing the session away lives up here, not among the round
             buttons. It asks first, and it steps aside while either question is
             open. */}
