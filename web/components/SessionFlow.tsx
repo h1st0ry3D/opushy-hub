@@ -290,10 +290,11 @@ export function SessionFlow(props: {
         )}
 
         {/* Either question is answered by the same pair, and No is the same
-            move for both: the question closes and nothing else changes. */}
+            move for both: the question closes and nothing else changes. Yes sits
+            on the left of No, the way the panel's row reads. */}
         {asking && (
-          <button type="button" onClick={() => onQuestion(null)}>
-            No
+          <button type="button" class="primary" onClick={softening ? tooHard : abandon}>
+            Yes
           </button>
         )}
 
@@ -304,8 +305,8 @@ export function SessionFlow(props: {
         )}
 
         {asking && (
-          <button type="button" class="primary" onClick={softening ? tooHard : abandon}>
-            Yes
+          <button type="button" onClick={() => onQuestion(null)}>
+            No
           </button>
         )}
       </div>
